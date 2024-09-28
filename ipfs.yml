@@ -1,0 +1,96 @@
+- hosts: ipfs 
+  become: true
+  gather_facts: no
+
+  
+  pre_tasks:
+  - name: Bootstrap a host without python2 installed
+    ansible.builtin.raw: apk update && apk add --no-cache python3
+  
+  - name: Install docker and unzip
+    apk:
+      name: "{{ packages }}"
+      state: present
+    vars:
+      packages:
+      - libc6-compat
+      - py3-pip
+      - py3-virtualenv
+      - docker 
+      - docker-compose 
+      - tar
+      - zip
+    notify:
+      - Start docker
+    
+  
+  - name: Install pip modules
+    pip:
+      virtualenv: /tmp/env_python
+      state: present
+      name: 
+        - docker
+  
+  tasks:
+  - name: Start docker
+    service: 
+      name: docker 
+      state: started
+      enabled: yes
+
+  
+  - name: Create folder IPFS
+    file: 
+      state: directory 
+      path: /app/ipfs
+
+  - name: Download IPFS cli
+    get_url: 
+      url: https://dist.ipfs.tech/ipfs-cluster-ctl/v1.1.1/ipfs-cluster-ctl_v1.1.1_linux-amd64.tar.gz
+      dest: /ipfs-cluster-ctl_v1.1.1_linux-amd64.tar.gz
+      force: true
+    notify:
+      - Start docker
+
+  - name: Unzip IPFS-cluster
+    unarchive: 
+      remote_src: true
+      mode: 'u=x,g=x,o=x'
+      src: /ipfs-cluster-ctl_v1.1.1_linux-amd64.tar.gz
+      dest: /app/ipfs
+
+  - name: Exclude IPFS-cluster tgz
+    file: 
+      state: absent 
+      path: /ipfs-cluster-ctl_v1.1.1_linux-amd64.tar.gz
+  
+  - name: Copy docker compose IPFS
+    copy: 
+      src: ./docker-compose.yml
+      dest: /app/ipfs/docker-compose.yml
+      force: true
+
+  - name: Docker compose up cluster IPFS
+    community.docker.docker_compose_v2: 
+      state: present
+      recreate: always
+      remove_orphans: true
+      project_src: /app/ipfs/
+   
+  - name: Allow connections on IPFS
+    iptables:
+      chain: INPUT
+      protocol: tcp
+      destination_ports:
+        - "5001"
+        - "8080"
+      jump: ACCEPT
+  
+  handlers:
+  - name: Start docker
+    service: 
+      name: docker 
+      state: started
+      enabled: yes
+
+  
